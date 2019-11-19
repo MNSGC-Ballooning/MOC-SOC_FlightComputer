@@ -53,9 +53,9 @@
 
 void setup() {
   Serial.begin(9600);       //starts serial communication to computer serial moniter/XBEE
+  Serial2.begin(115200);    //starts serial communication to freewave radio
   sdSetup();                //starts SD Card logging and creates logging files
   Serial1.begin(UBLOX_BAUD);//starts communication to UBLOX
-  Serial2.begin(115200);    //starts serial communication to freewave radio
   radioAndGpsSetup();       //begins radio communication through XBee and gps tracking through UBLOX
   sensorsSetup();           //activates temperature sensors, geiger counter, solar panels, and SMART system
 }
