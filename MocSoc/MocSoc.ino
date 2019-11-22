@@ -107,6 +107,7 @@ void printout(String to_print, bool endline) {
 }
 
 void printout(String to_print, bool endline, bool data) {    //prints to both moniter(XBEE) and radio, endline is for print (false) or println (true), data tells what file to write to
+  Serial2.print("$M$");
   Serial2.print(to_print);
   Serial.print(to_print);
   if(endline) {
@@ -223,7 +224,7 @@ void recieveCommands()  {
   else {
     command = xBee.receive();
   }
-  if (!(command == ""))  commandRegister(command);                //if a command is received, reads command and executes instructions
+  if ((!(command == ""))&&(!(command.substring(0,3).equals("$M$"))))  commandRegister(command);                //if a command is received, reads command and executes instructions
 }
 
 void commandRegister(String command)  {
