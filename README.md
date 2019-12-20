@@ -10,7 +10,7 @@ TEMP: Reports current temperature in celsius.
 GPS: Reports last GPS data, as well as the time of last lock that passed GPS filter.
 GEIGER: Reports geiger counter hits, both total and since last logging cycle. NOTE: WILL REFRESH GEIGER COUNTER CYCLE HITS
 VOLT: Reports voltage and current information from solar panels.
-DEPLOY: Attempts to deploy solar panel mounts. It is unadvisable to trigger before PPOD has opened.
+DEPLOY: Attempts to deploy solar panel mounts. It is inadvisable to trigger before PPOD has opened.
 START: Overrides remove-before-flight pin, and begins data collection and flight timer.
 ACGPS: Overrides GPS filter for next GPS data intake. Only use in event of mission-critical failure of GPS filter.
 SETT: Sets the time till deployment of the solar panel mounts in minutes. Ex: SETT35 will tell MOC-SOC to deploy in 35 minutes.
