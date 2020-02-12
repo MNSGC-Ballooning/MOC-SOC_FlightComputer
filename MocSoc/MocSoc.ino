@@ -127,7 +127,7 @@ void printdata() {
   String data = gps_lock + String(sensors.getTempCByIndex(0)) + "," + String(ina219.getBusVoltage_V()) + "," + String(ina219.getShuntVoltage_mV()/1000.0) + "," 
   + String(ina219.getCurrent_mA()) + "," + String(ina219.getPower_mW()) + "," + String(geiger1.getTotalCount()) + "," + String(geiger1.getCycleCount());
   printout(data,true,true);
-  if(extra_data) data += report_data;
+  if(extra_data) data += "," + report_data;
   if(SD_data_active) {
     datalog = SD.open(data_filename, FILE_WRITE);
     datalog.println(data);
