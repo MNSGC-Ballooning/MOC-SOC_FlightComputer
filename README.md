@@ -2,7 +2,7 @@
 
 Written by Paul Wehling with assistance from Lilia Bouayed, based on code originally written by Jordan Bartlett and Emma Krieg.
 For use with MOC-SOC 3U Cubesat 1.1, built by Paul Wehling and Donald Rowell, based on original by Jordan Bartlett and Emma Krieg.
-Last updated November 19, 2019
+Last updated February 12, 2020
 
 Commands to be used with this code:
 QUERY: Reports essential status information, has no actual effect on MOC-SOC. Useful for testing radio connection.
@@ -13,6 +13,7 @@ VOLT: Reports voltage and current information from solar panels.
 DEPLOY: Attempts to deploy solar panel mounts. It is inadvisable to trigger before PPOD has opened.
 START: Overrides remove-before-flight pin, and begins data collection and flight timer.
 ACGPS: Overrides GPS filter for next GPS data intake. Only use in event of mission-critical failure of GPS filter.
+RSGPS: Spams calls to update GPS. May have a better chance of achieving a lock than normal operation.
 SETT: Sets the time till deployment of the solar panel mounts in minutes. Ex: SETT35 will tell MOC-SOC to deploy in 35 minutes.
 SETC: Sets data and radio cycle time in seconds. Ex: SETC60 will tell MOC-SOC to cycle every minute.
 +: Adds time to time till deployment timer in minutes. Ex: +30 will add half an hour until MOC-SOC deploys.
