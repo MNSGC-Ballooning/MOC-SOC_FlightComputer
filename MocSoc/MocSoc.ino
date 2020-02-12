@@ -1,9 +1,9 @@
 //MOC-SOC Flight Computer
 //Written by Paul Wehling with assistance from Lilia Bouayed, Based on code originally written by Jordan Bartlett and Emma Krieg.
 //For use with MOC-SOC 3U Cubesat 1.1, built by Paul Wehling and Donald Rowell, based on original by Jordan Bartlett and Emma Krieg.
-//Last updated November 19, 2019
-  
-  #include "Smart.h"
+//Last updated February 12, 2020
+
+  #include <Servo.h>
   #include <SD.h>
   #include <DallasTemperature.h>
   #include <OneWire.h>
@@ -14,9 +14,9 @@
 
   #define chipSelect 53       //primary pin for SD Logging
   #define tempBus 11          //data pin for temperature probe
-  #define smartPin 5          //digital pin for SMART release system
+  #define smartPin 6          //digital pin for SMART release system
   #define rbfPin A0           //pin through which remove-before-flight pin connects to 5V rail
-  #define timeTillDeploy 75   //flight time in minutes after which to deploy panels
+  #define timeTillDeploy 70   //flight time in minutes after which to deploy panels
   #define xbeeSerial Serial   //communication channel for shield XBee
   #define cycle_time_sec 10   //time in seconds for a complete logging cycle
   #define ubloxSerial Serial1 //communication channel for UBLOX GPS
@@ -33,7 +33,7 @@
   OneWire oneWire(tempBus);                                       //creates OneWire object for temperature sensor
   DallasTemperature sensors(&oneWire);                            //creates object for temperature measurement
   float temperature = 0.0;                                        //temperature variable
-  Smart smart = Smart(smartPin);                                  //SMART object for panel deployment
+  Servo servo;                                                    //SMART object for panel deployment
   bool smart_release_attempt = false;                             //checks if smart.release() has been called
   bool flight_begun = false;                                      //checks if MocSoc has left ground
   unsigned long millis_start_time = 0;                            //records time at which launch occurs
@@ -49,6 +49,8 @@
   unsigned long gps_time[3];                                      //holds time of last three gps locks (0 starts at millis_start_time)
   UbloxGPS gps = UbloxGPS(&ubloxSerial);                          //creates object for GPS tracking
   bool gps_good = false;                                          //tracks if GPS readings have cleared filter
+  String report_data;                                             //contains qualitative data and radio traffic receipts
+  bool extra_data = false;                                        //tracks if there is extra data to print during a given cycle
   
 
 void setup() {
@@ -70,7 +72,7 @@ void loop() {
 }
 
 void sdSetup() {                 //starts SD Card logging and creates logging files
-  pinMode(53,OUTPUT);
+  //pinMode(53,OUTPUT);
   printout("Initializing SD card",true);
   if(!SD.begin(chipSelect)) printout("ERROR: Card failed, or not present",true);
   else {
@@ -115,15 +117,8 @@ void printout(String to_print, bool endline, bool data) {    //prints to both mo
     Serial.println();
   }
   if(!(data) && SD_report_active) {
-    datalog = SD.open(report_filename, FILE_WRITE);
-    if(!timestamp_hold)datalog.print(String(millis())+":");
-    datalog.print(to_print);
-    if(endline) {
-      datalog.println();
-      timestamp_hold = false;
-      }
-    else timestamp_hold = true;
-    datalog.close();
+    report_data += to_print;
+    extra_data = true;
     }
 }
 
@@ -132,10 +127,13 @@ void printdata() {
   String data = gps_lock + String(sensors.getTempCByIndex(0)) + "," + String(ina219.getBusVoltage_V()) + "," + String(ina219.getShuntVoltage_mV()/1000.0) + "," 
   + String(ina219.getCurrent_mA()) + "," + String(ina219.getPower_mW()) + "," + String(geiger1.getTotalCount()) + "," + String(geiger1.getCycleCount());
   printout(data,true,true);
+  if(extra_data) data += report_data;
   if(SD_data_active) {
     datalog = SD.open(data_filename, FILE_WRITE);
     datalog.println(data);
     datalog.close();
+    extra_data = false;
+    report_data = "";
   }
 }
 
@@ -145,15 +143,11 @@ void radioAndGpsSetup() {
 }
 
 void sensorsSetup() {
-  //if (!sensors.getAddress(thermometer, 0)) printout("ERROR: Unable to find temperature sensor address",true);  //get address of temperature sensor, display error if not found
-  //else  {
-  //  sensors.setResolution(thermometer, 9);                                                                     //set resolution for both sensor to 9 bits
-  //  printout("Temperature logging started",true);
-  //}
   sensors.begin();
-  smart.initialize();
+  servo.attach(smartPin);
+  servo.write(0);
   printout("SMART initialized",true);
-  uint32_t currentFrequency;
+  int32_t currentFrequency;
   ina219.begin();
   geiger1.init();
 }
@@ -169,7 +163,7 @@ void checkStart() {
 
 void checkDeploy()  {
   if(((millis()- millis_start_time) > (cutTime*60000)))  {
-    smart.release();
+    servo.write(180);
     smart_release_attempt = true;
     printout("SMART triggered at " + String(millis()),true);
   }
@@ -227,6 +221,23 @@ void recieveCommands()  {
   if ((!(command == ""))&&(!(command.substring(0,3).equals("$M$"))))  commandRegister(command);                //if a command is received, reads command and executes instructions
 }
 
+void resetGPS() {                                                 //experimental, copied from GPS example in MnSGC Training Catalogue
+  for(int i=0;i<100;i++)  {
+    gps.update();
+    if(millis()%1000 == 0) {
+    gps.update();
+    String tempdata = String(gps.getMonth()) + "/" + String(gps.getDay()) + "/" + String(gps.getYear()) + ","
+                  + String(gps.getHour()-5) + ":" + String(gps.getMinute()) + ":" + String(gps.getSecond()) + ","
+                  + String(gps.getLat(), 4) + "," + String(gps.getLon(), 4) + "," + String(gps.getAlt_meters(), 1) + ","
+                  + String(gps.getSats()) + ",";
+    if(gps.getFixAge() > 2000)
+      tempdata += "No Fix,";
+    else
+      tempdata += "Fix,";
+    }
+  }
+}
+
 void commandRegister(String command)  {
   printout("Command received: \"" + command + "\"",true);
   if(command.equals("QUERY") || command.equals("PING"))  {        //Radios back relevant status information, has no actual action
@@ -255,7 +266,7 @@ void commandRegister(String command)  {
     printout("Current voltage is " + String(ina219.getBusVoltage_V() - (ina219.getShuntVoltage_mV()/1000.0)) + " volts",true);
   }
   else if(command.equals("DEPLOY"))  {                            //Attempts to deploy panels
-    smart.release();
+    servo.write(180);
     smart_release_attempt = true;
     printout("SMART triggered at " + String(millis()) + " via command",true);
   }
@@ -269,6 +280,10 @@ void commandRegister(String command)  {
   }
   else if(command.equals("ACGPS"))  {                             //Overrides GPS filter
     attemptGPS(true);
+  }
+  else if(command.equals("RSGPS"))  {                             //Spams GPS to establish link
+    resetGPS();
+    printout("GPS reset attempt completed",true);
   }
   else if((command.substring(0,4)).equals("SETT"))  {             //Changes the launch-till-deploy timer to inputted value, ie 'SETT35' would set timer to 35 minutes from now
     command.remove(0,4);
