@@ -11,6 +11,8 @@ GPS: Reports last GPS data, as well as the time of last lock that passed GPS fil
 GEIGER: Reports geiger counter hits, both total and since last logging cycle. NOTE: WILL REFRESH GEIGER COUNTER CYCLE HITS
 VOLT: Reports voltage and current information from solar panels.
 DEPLOY: Attempts to deploy solar panel mounts. It is inadvisable to trigger before PPOD has opened.
+PREPDEPLOY: Removes need for PPOD to recieve go-ahead from PPOD to deploy.
+UNPREPDEPLOY: Undoes PREDEPLOY command. Will not stop deployment if PPOD is broacasting a deployed signal.
 START: Overrides remove-before-flight pin, and begins data collection and flight timer.
 ACGPS: Overrides GPS filter for next GPS data intake. Only use in event of mission-critical failure of GPS filter.
 RSGPS: Spams calls to update GPS. May have a better chance of achieving a lock than normal operation.
