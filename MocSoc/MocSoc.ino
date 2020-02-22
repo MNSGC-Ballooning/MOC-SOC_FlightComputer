@@ -1,7 +1,8 @@
 //MOC-SOC Flight Computer
 //Written by Paul Wehling with assistance from Lilia Bouayed, Based on code originally written by Jordan Bartlett and Emma Krieg.
 //For use with MOC-SOC 3U Cubesat 1.1, built by Paul Wehling and Donald Rowell, based on original by Jordan Bartlett and Emma Krieg.
-//Last updated February 12, 2020
+//Current code built to run alongside ParasitePCB code on PPOD Deployment System.
+//Last updated February 21, 2020
 
   #include <Servo.h>
   #include <SD.h>
@@ -20,7 +21,7 @@
   #define xbeeSerial Serial   //communication channel for shield XBee
   #define cycle_time_sec 10   //time in seconds for a complete logging cycle
   #define ubloxSerial Serial1 //communication channel for UBLOX GPS
-  #define gpsTolerance 10     //ft/s the gps is allowed to drift from last contact
+  #define gpsTolerance 25     //ft/s the gps is allowed to drift from last contact
   #undef  abs                 //allows abs() to be used as a regular function instead of the macro that Arduino usually uses
   
   
@@ -51,6 +52,7 @@
   bool gps_good = false;                                          //tracks if GPS readings have cleared filter
   String report_data;                                             //contains qualitative data and radio traffic receipts
   bool extra_data = false;                                        //tracks if there is extra data to print during a given cycle
+  bool ppod_deploy_ping = false;                                  //tracks if PPOD has deployed, allows MOC-SOC deployment after recieved ping. Ignored by 'DEPLOY' command
   
 
 void setup() {
@@ -65,7 +67,7 @@ void setup() {
 void loop() {
   if(!flight_begun) checkStart();                                 //determines if flight has started yet based on remove-before-flight switch
   else if(!smart_release_attempt) checkDeploy();                  //activates SMART after cutTime elapses
-  recieveCommands();                                              //checks XBee for commands from ground/comms/etc
+  recieveCommands();                                              //checks XBee and freewave for commands from ground/comms/etc
   attemptGPS(false);                                              //tries to establish a gps lock and filters for good and bad hits
   printdata();                                                    //prints the data to radio, serial, SD, and XBEE
   wait();                                                         //holds until cycle time has elapsed
@@ -111,10 +113,10 @@ void printout(String to_print, bool endline) {
 void printout(String to_print, bool endline, bool data) {    //prints to both moniter(XBEE) and radio, endline is for print (false) or println (true), data tells what file to write to
   Serial2.print("$M$");
   Serial2.print(to_print);
-  Serial.print(to_print);
+  //Serial.print(to_print);
   if(endline) {
     Serial2.println();
-    Serial.println();
+    //Serial.println();
   }
   if(!(data) && SD_report_active) {
     report_data += to_print;
@@ -125,7 +127,8 @@ void printout(String to_print, bool endline, bool data) {    //prints to both mo
 void printdata() {
   sensors.requestTemperatures();
   String data = gps_lock + String(sensors.getTempCByIndex(0)) + "," + String(ina219.getBusVoltage_V()) + "," + String(ina219.getShuntVoltage_mV()/1000.0) + "," 
-  + String(ina219.getCurrent_mA()) + "," + String(ina219.getPower_mW()) + "," + String(geiger1.getTotalCount()) + "," + String(geiger1.getCycleCount());
+  + String(ina219.getCurrent_mA()) + "," + String(ina219.getPower_mW()) + "," + String(geiger1.getTotalCount()) + "," + String(geiger1.getCycleCount()) + ","
+  + String(ppod_deploy_ping);
   printout(data,true,true);
   if(extra_data) data += "," + report_data;
   if(SD_data_active) {
@@ -139,6 +142,10 @@ void printdata() {
 
 void radioAndGpsSetup() {
   xBee.init('A');
+  xBee.enterATmode();
+  xBee.atCommand("ATDL1");
+  xBee.atCommand("ATMY0");
+  xBee.exitATmode();
   gps.init();
 }
 
@@ -162,7 +169,7 @@ void checkStart() {
 }
 
 void checkDeploy()  {
-  if(((millis()- millis_start_time) > (cutTime*60000)))  {
+  if(((millis()- millis_start_time) > (cutTime*60000)) && ppod_deploy_ping)  {
     servo.write(180);
     smart_release_attempt = true;
     printout("SMART triggered at " + String(millis()),true);
@@ -208,6 +215,8 @@ void attemptGPS(bool override_gps) {
 void wait() {
   while(millis()-last_millis_overflow < cycle_time){
     gps.update();
+    recieveCommands();
+    delay(10);
   }
   last_millis_overflow = millis();
 }
@@ -215,10 +224,22 @@ void wait() {
 void recieveCommands()  {
   String command;
   if(Serial2.available() > 0) command = Serial2.readString();
-  else {
-    command = xBee.receive();
-  }
   if ((!(command == ""))&&(!(command.substring(0,3).equals("$M$"))))  commandRegister(command);                //if a command is received, reads command and executes instructions
+  
+  if(Serial.available() > 0) command = xBee.receive();
+  {
+    if (command.substring(0,3).equals("$P$"))  {
+      printout("Forwarded from XBEE: \"",false);
+      short cmd_length = command.length();
+      printout(command.substring(4,cmd_length),false);
+      printout("\"",true);
+    }
+    else if (command.equals("R1"))  {
+      ppod_deploy_ping = true;
+    }
+    else if (command.equals("R0"));
+    else if (!command.equals("")) commandRegister(command);
+  }
 }
 
 void resetGPS() {                                                 //experimental, copied from GPS example in MnSGC Training Catalogue
@@ -270,6 +291,18 @@ void commandRegister(String command)  {
     smart_release_attempt = true;
     printout("SMART triggered at " + String(millis()) + " via command",true);
   }
+  else if(command.equals("PREPDEPLOY"))  {                        //Removes need for MOC-SOC to recieve go-ahead from PPOD to deploy
+    if (!ppod_deploy_ping) {
+      ppod_deploy_ping = true;
+      printout("Ready to deploy without PPOD authorization",true);
+    }
+  }
+  else if(command.equals("UNPREPDEPLOY"))  {                      //Undoes PREPDEPLOY command.  Will not stop deployment if PPOD is broacasting a deployed signal
+    if (ppod_deploy_ping) {
+      ppod_deploy_ping = false;
+      printout("Ready to deploy with PPOD authorization",true);
+    }
+  }
   else if(command.equals("START"))  {                             //Activates measurement and sets start time if not already started
     printout("Flight started via command at ",false);
     if(!(flight_begun)) {
@@ -301,9 +334,8 @@ void commandRegister(String command)  {
     command.remove(0,1);
     cutTime -= command.toFloat();
   }
-  else if((command.substring(0,1)).equals("P"))  {                //Forwards message to PPOD, ie 'P+15' would relay '+15' to any connectted XBee with ID 'POD' or 'PPOD'
+  else if((command.substring(0,1)).equals("P"))  {                //Forwards message to PPOD, ie 'P+15' would relay '+15' to any connected XBee with ID 'PPOD'
     command.remove(0,1);
-    Serial.println("POD?" + command + "!");
     Serial.println("PPOD?" + command + "!");
   }
   else if(!(command.equals("")))  {
