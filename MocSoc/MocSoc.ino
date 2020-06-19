@@ -2,7 +2,7 @@
 //Written by Paul Wehling with assistance from Lilia Bouayed, Based on code originally written by Jordan Bartlett and Emma Krieg.
 //For use with MOC-SOC 3U Cubesat 1.1, built by Paul Wehling and Donald Rowell, based on original by Jordan Bartlett and Emma Krieg.
 //Current code built to run alongside ParasitePCB code on PPOD Deployment System.
-//Last updated February 21, 2020
+//Last updated June 19, 2020
 
   #include <Servo.h>
   #include <SD.h>
