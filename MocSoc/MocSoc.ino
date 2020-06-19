@@ -17,6 +17,7 @@
   #define tempBus 11          //data pin for temperature probe
   #define smartPin 6          //digital pin for SMART release system
   #define rbfPin A0           //pin through which remove-before-flight pin connects to 5V rail
+  #define radioConnectPin A1  //pin that monitors radio connection status
   #define timeTillDeploy 70   //flight time in minutes after which to deploy panels
   #define xbeeSerial Serial   //communication channel for shield XBee
   #define cycle_time_sec 10   //time in seconds for a complete logging cycle
@@ -53,6 +54,8 @@
   String report_data;                                             //contains qualitative data and radio traffic receipts
   bool extra_data = false;                                        //tracks if there is extra data to print during a given cycle
   bool ppod_deploy_ping = false;                                  //tracks if PPOD has deployed, allows MOC-SOC deployment after recieved ping. Ignored by 'DEPLOY' command
+  int last_data_relayed = 0;                                      //keeps note of what data has and has not been sent via telemetry link
+  int last_report_relayed = 0;                                    //keeps note of what reports have and have not been sent via telemetry link
   
 
 void setup() {
@@ -69,7 +72,8 @@ void loop() {
   else if(!smart_release_attempt) checkDeploy();                  //activates SMART after cutTime elapses
   recieveCommands();                                              //checks XBee and freewave for commands from ground/comms/etc
   attemptGPS(false);                                              //tries to establish a gps lock and filters for good and bad hits
-  printdata();                                                    //prints the data to radio, serial, SD, and XBEE
+  printdata();                                                    //prints the data to serial, SD, and XBEE
+  radio_check();                                                  //attempts connection to ground station, if established downlinks all data since last connection
   wait();                                                         //holds until cycle time has elapsed
 }
 
@@ -111,12 +115,12 @@ void printout(String to_print, bool endline) {
 }
 
 void printout(String to_print, bool endline, bool data) {    //prints to both moniter(XBEE) and radio, endline is for print (false) or println (true), data tells what file to write to
-  Serial2.print("$M$");
-  Serial2.print(to_print);
-  //Serial.print(to_print);
+  //Serial2.print("$M$");
+  //Serial2.print(to_print);
+  Serial.print(to_print);
   if(endline) {
-    Serial2.println();
-    //Serial.println();
+    //Serial2.println();
+    Serial.println();
   }
   if(!(data) && SD_report_active) {
     report_data += to_print;
@@ -340,5 +344,52 @@ void commandRegister(String command)  {
   }
   else if(!(command.equals("")))  {
     printout("ERROR: Command not recognized",true);
+  }
+}
+
+void radio_check() {
+  bool data_done = false;
+  bool report_done = false;
+  bool good_conn = false;
+  char next_ch;
+  if(analogRead(radioConnectPin) > 500) {
+    good_conn = true;
+    datalog = SD.open(data_filename, FILE_READ);
+    next_ch=datalog.read();
+    for (int i=0; i<=last_data_relayed; i++) {
+      do next_ch=datalog.read(); while(next_ch != '\n');
+    }
+    good_conn = (analogRead(radioConnectPin) > 500);
+    if(!(datalog.peek()+1)) data_done = true;
+    while(good_conn && !data_done) {
+      Serial2.print("$M$");
+      do {
+        next_ch=datalog.read();
+        Serial2.print(next_ch);
+      } while(next_ch != '\n');
+      good_conn = (analogRead(radioConnectPin) > 500);
+      if(good_conn) last_data_relayed++;
+      if(!(datalog.peek()+1)) data_done = true;
+    }
+    datalog.close();
+    
+    datalog = SD.open(report_filename, FILE_READ);
+    next_ch=datalog.read();
+    for (int i=0; i<=last_report_relayed; i++) {
+      do next_ch=datalog.read(); while(next_ch != '\n');
+    }
+    good_conn = (analogRead(radioConnectPin) > 500);
+    if(!(datalog.peek()+1)) report_done = true;
+    while(good_conn && !report_done) {
+      Serial2.print("$M$");
+      do {
+        next_ch=datalog.read();
+        Serial2.print(next_ch);
+      } while(next_ch != '\n');
+      good_conn = (analogRead(radioConnectPin) > 500);
+      if(good_conn) last_report_relayed++;
+      if(!(datalog.peek()+1)) report_done = true;
+    }
+    datalog.close();
   }
 }
