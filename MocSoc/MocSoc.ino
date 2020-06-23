@@ -56,6 +56,7 @@
   bool ppod_deploy_ping = false;                                  //tracks if PPOD has deployed, allows MOC-SOC deployment after recieved ping. Ignored by 'DEPLOY' command
   int last_data_relayed = 0;                                      //keeps note of what data has and has not been sent via telemetry link
   int last_report_relayed = 0;                                    //keeps note of what reports have and have not been sent via telemetry link
+  bool smart_telemetry_enabled = true;                            //turns 'smart telemetry' protocol on and off, if false, all data is relayed as it is gathered
   
 
 void setup() {
@@ -73,7 +74,7 @@ void loop() {
   recieveCommands();                                              //checks XBee and freewave for commands from ground/comms/etc
   attemptGPS(false);                                              //tries to establish a gps lock and filters for good and bad hits
   printdata();                                                    //prints the data to serial, SD, and XBEE
-  radio_check();                                                  //attempts connection to ground station, if established downlinks all data since last connection
+  if(smart_telemetry_enabled) radio_check();                      //attempts connection to ground station, if established downlinks all data since last connection
   wait();                                                         //holds until cycle time has elapsed
 }
 
@@ -107,6 +108,10 @@ void sdSetup() {                 //starts SD Card logging and creates logging fi
     }
     if (!SD_report_active) printout("ERROR: No available report file names, clear SD card to enable logging",true);
     if (!SD_data_active) printout("ERROR: No available data file names, clear SD card to enable logging",true);
+    if (!SD_data_active || !SD_report_active) {
+      smart_telemetry_enabled = false;
+      printout("WARNING: Smart telemetry disabled",true);
+    }
   }
 }
 
@@ -114,13 +119,17 @@ void printout(String to_print, bool endline) {
   printout(to_print,endline,false);
 }
 
-void printout(String to_print, bool endline, bool data) {    //prints to both moniter(XBEE) and radio, endline is for print (false) or println (true), data tells what file to write to
-  //Serial2.print("$M$");
-  //Serial2.print(to_print);
+void printout(String to_print, bool endline, bool data) {    //prints to moniter(XBEE), endline is for print (false) or println (true), data tells what file to write to
   Serial.print(to_print);
   if(endline) {
-    //Serial2.println();
     Serial.println();
+   if(!smart_telemetry_enabled) {
+    Serial2.print("$M$");
+    Serial2.print(to_print);
+    if(endline) {
+      Serial2.println();
+    }
+   }
   }
   if(!(data) && SD_report_active) {
     report_data += to_print;
@@ -134,10 +143,14 @@ void printdata() {
   + String(ina219.getCurrent_mA()) + "," + String(ina219.getPower_mW()) + "," + String(geiger1.getTotalCount()) + "," + String(geiger1.getCycleCount()) + ","
   + String(ppod_deploy_ping);
   printout(data,true,true);
-  if(extra_data) data += "," + report_data;
   if(SD_data_active) {
     datalog = SD.open(data_filename, FILE_WRITE);
     datalog.println(data);
+    datalog.close();
+  }
+  if(extra_data && SD_report_active) {
+    datalog = SD.open(report_filename, FILE_WRITE);
+    datalog.println(report_data);
     datalog.close();
     extra_data = false;
     report_data = "";
@@ -307,6 +320,11 @@ void commandRegister(String command)  {
       printout("Ready to deploy with PPOD authorization",true);
     }
   }
+  else if(command.equals("TOGGLETELEMETRYMODE"))  {               //Enables or disables 'smart telemetry', where radio sends packets only when connected
+    smart_telemetry_enabled = !smart_telemetry_enabled;
+    if (smart_telemetry_enabled) printout("Smart telemetry protocol enabled\nWARNING: data may be lost if SD logging has failed",true);
+    else printout("Smart telemetry protocol disabled\nWARNING: data packets may be lost if radio connection is lost",true);
+  }
   else if(command.equals("START"))  {                             //Activates measurement and sets start time if not already started
     printout("Flight started via command at ",false);
     if(!(flight_begun)) {
@@ -391,5 +409,7 @@ void radio_check() {
       if(!(datalog.peek()+1)) report_done = true;
     }
     datalog.close();
+    printout(("Connection made at " + String(millis()) + ", data relayed to line " + 
+    String(last_data_relayed) + ", reports to line " + String(last_report_relayed)),true);
   }
 }
