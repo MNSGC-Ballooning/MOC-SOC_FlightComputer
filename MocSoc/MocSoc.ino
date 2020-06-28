@@ -13,7 +13,7 @@
   #include <RelayXBee.h>
   #include <UbloxGPS.h>
 
-  #define chipSelect 53       //primary pin for SD Logging
+  #define chipSelect 4        //primary pin for SD Logging
   #define tempBus 11          //data pin for temperature probe
   #define smartPin 6          //digital pin for SMART release system
   #define rbfPin A0           //pin through which remove-before-flight pin connects to 5V rail
@@ -91,6 +91,8 @@ void sdSetup() {                 //starts SD Card logging and creates logging fi
         datalog = SD.open(report_filename, FILE_WRITE);
         datalog.close();
         SD_report_active = true;
+        printout(" ",true);  //loads blank line into report so radio_check doesn't miss it
+        printout(" ",true,true);  //same thing with data
         printout("Logging report to: " + String(report_filename),true);
         break;
       }
@@ -133,6 +135,7 @@ void printout(String to_print, bool endline, bool data) {    //prints to moniter
   }
   if(!(data) && SD_report_active) {
     report_data += to_print;
+    if(endline) report_data += "\n";
     extra_data = true;
     }
 }
@@ -150,7 +153,7 @@ void printdata() {
   }
   if(extra_data && SD_report_active) {
     datalog = SD.open(report_filename, FILE_WRITE);
-    datalog.println(report_data);
+    datalog.print(report_data);
     datalog.close();
     extra_data = false;
     report_data = "";
@@ -233,6 +236,7 @@ void wait() {
   while(millis()-last_millis_overflow < cycle_time){
     gps.update();
     recieveCommands();
+    radio_check();
     delay(10);
   }
   last_millis_overflow = millis();
@@ -325,6 +329,11 @@ void commandRegister(String command)  {
     if (smart_telemetry_enabled) printout("Smart telemetry protocol enabled\nWARNING: data may be lost if SD logging has failed",true);
     else printout("Smart telemetry protocol disabled\nWARNING: data packets may be lost if radio connection is lost",true);
   }
+  else if(command.equals("RESENDALL")) {                             //Rapidly sends all data taken so far in flight
+    last_data_relayed=0;
+    last_report_relayed=0;
+    radio_check();
+  }
   else if(command.equals("START"))  {                             //Activates measurement and sets start time if not already started
     printout("Flight started via command at ",false);
     if(!(flight_begun)) {
@@ -339,6 +348,16 @@ void commandRegister(String command)  {
   else if(command.equals("RSGPS"))  {                             //Spams GPS to establish link
     resetGPS();
     printout("GPS reset attempt completed",true);
+  }
+  else if ((command.substring(0,14)).equals("RESENDLASTDATA"))  {     //Resends inputted value of last data, ie 'RESENDLASTDATA30' would send the 30 most recent data lines
+    command.remove(0,14);
+    last_data_relayed -= command.toFloat();
+    radio_check;
+  }
+  else if ((command.substring(0,17)).equals("RESENDLASTREPORTS"))  {     //Resends inputted value of last reports, ie 'RESENDLASTREPORTS30' would send the 30 most recent data lines
+    command.remove(0,17);
+    last_data_relayed -= command.toFloat();
+    radio_check;
   }
   else if((command.substring(0,4)).equals("SETT"))  {             //Changes the launch-till-deploy timer to inputted value, ie 'SETT35' would set timer to 35 minutes from now
     command.remove(0,4);
@@ -372,32 +391,13 @@ void radio_check() {
   char next_ch;
   if(analogRead(radioConnectPin) > 500) {
     good_conn = true;
-    datalog = SD.open(data_filename, FILE_READ);
-    next_ch=datalog.read();
-    for (int i=0; i<=last_data_relayed; i++) {
-      do next_ch=datalog.read(); while(next_ch != '\n');
-    }
-    good_conn = (analogRead(radioConnectPin) > 500);
-    if(!(datalog.peek()+1)) data_done = true;
-    while(good_conn && !data_done) {
-      Serial2.print("$M$");
-      do {
-        next_ch=datalog.read();
-        Serial2.print(next_ch);
-      } while(next_ch != '\n');
-      good_conn = (analogRead(radioConnectPin) > 500);
-      if(good_conn) last_data_relayed++;
-      if(!(datalog.peek()+1)) data_done = true;
-    }
-    datalog.close();
-    
     datalog = SD.open(report_filename, FILE_READ);
     next_ch=datalog.read();
     for (int i=0; i<=last_report_relayed; i++) {
       do next_ch=datalog.read(); while(next_ch != '\n');
     }
     good_conn = (analogRead(radioConnectPin) > 500);
-    if(!(datalog.peek()+1)) report_done = true;
+    if(datalog.peek()==-1) report_done = true;
     while(good_conn && !report_done) {
       Serial2.print("$M$");
       do {
@@ -406,7 +406,26 @@ void radio_check() {
       } while(next_ch != '\n');
       good_conn = (analogRead(radioConnectPin) > 500);
       if(good_conn) last_report_relayed++;
-      if(!(datalog.peek()+1)) report_done = true;
+      if(datalog.peek()==-1) report_done = true;
+    }
+    datalog.close();
+    
+    datalog = SD.open(data_filename, FILE_READ);
+    next_ch=datalog.read();
+    for (int i=0; i<=last_data_relayed; i++) {
+      do next_ch=datalog.read(); while(next_ch != '\n');
+    }
+    good_conn = (analogRead(radioConnectPin) > 500);
+    if(datalog.peek()==-1) data_done = true;
+    while(good_conn && !data_done) {
+      Serial2.print("$M$");
+      do {
+        next_ch=datalog.read();
+        Serial2.print(next_ch);
+      } while(next_ch != '\n');
+      good_conn = (analogRead(radioConnectPin) > 500);
+      if(good_conn) last_data_relayed++;
+      if(datalog.peek()==-1) data_done = true;
     }
     datalog.close();
     printout(("Connection made at " + String(millis()) + ", data relayed to line " + 
