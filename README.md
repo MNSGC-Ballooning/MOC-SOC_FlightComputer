@@ -13,9 +13,13 @@ VOLT: Reports voltage and current information from solar panels.
 DEPLOY: Attempts to deploy solar panel mounts. It is inadvisable to trigger before PPOD has opened.
 PREPDEPLOY: Removes need for MOC-SOC to recieve go-ahead from PPOD to deploy.
 UNPREPDEPLOY: Undoes PREPDEPLOY command. Will not stop deployment if PPOD is broacasting a deployed signal.
+TOGGLETELEMETRYMODE: Toggles between advanced telemetry (send when connected) and standard radio protocol
+RESENDALL: Resends all data and reports
 START: Overrides remove-before-flight pin, and begins data collection and flight timer.
 ACGPS: Overrides GPS filter for next GPS data intake. Only use in event of mission-critical failure of GPS filter.
 RSGPS: Spams calls to update GPS. May have a better chance of achieving a lock than normal operation.
+RESENDLASTDATA: Sends a specified amount of previous data again. Ex: RESENDLASTDATA30 will resend last 30 data lines
+RESENDLASTREPORTS: Sends a specified amount of pervious reports again. Ex: RESENDLASTREPORTS5 will resend last 5 reports
 SETT: Sets the time till deployment of the solar panel mounts in minutes. Ex: SETT35 will tell MOC-SOC to deploy in 35 minutes.
 SETC: Sets data and radio cycle time in seconds. Ex: SETC60 will tell MOC-SOC to cycle every minute.
 +: Adds time to time till deployment timer in minutes. Ex: +30 will add half an hour until MOC-SOC deploys.
