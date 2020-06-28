@@ -2,7 +2,7 @@
 
 Written by Paul Wehling with assistance from Lilia Bouayed, based on code originally written by Jordan Bartlett and Emma Krieg.
 For use with MOC-SOC 3U Cubesat 1.1, built by Paul Wehling and Donald Rowell, based on original by Jordan Bartlett and Emma Krieg.
-Last updated February 21, 2020
+Last updated February 28, 2020
 
 Commands to be used with this code:
 QUERY: Reports essential status information, has no actual effect on MOC-SOC. Useful for testing radio connection.
