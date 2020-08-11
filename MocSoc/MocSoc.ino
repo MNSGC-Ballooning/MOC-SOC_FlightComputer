@@ -2,7 +2,7 @@
 //Written by Paul Wehling with assistance from Lilia Bouayed, Based on code originally written by Jordan Bartlett and Emma Krieg.
 //For use with MOC-SOC 3U Cubesat 1.2, built by Paul Wehling and Donald Rowell, based on original by Jordan Bartlett and Emma Krieg.
 //Current code built to run alongside ParasitePCB code on PPOD Deployment System.
-//Last updated August 10, 2020
+//Last updated August 11, 2020
 
   #include <Servo.h>
   #include <SD.h>
@@ -106,6 +106,7 @@ void sdSetup() {                 //starts SD Card logging and creates logging fi
         datalog = SD.open(report_filename, FILE_WRITE);
         datalog.close();
         SD_report_active = true;
+        printout(" ",true);  //loads blank line into report so radioConnect doesn't miss it
         printout("Logging report to: " + String(report_filename),true);
         break;
       }
@@ -117,6 +118,7 @@ void sdSetup() {                 //starts SD Card logging and creates logging fi
         datalog = SD.open(data_filename, FILE_WRITE);
         datalog.close();
         SD_data_active = true;
+        printout(" ",true,true); //loads blank line into data so radioConnect doesn't miss it
         printout("Logging data to: " + String(data_filename),true);
         break;
       }
@@ -353,6 +355,11 @@ void commandRegister(String command)  {
       printout("Ready to deploy with PPOD authorization",true);
     }
   }
+  else if(command.equals("RESENDALL"))  {                         //Rapidly sends all data and reports taken so far in flight
+    last_data_relayed = 0;
+    last_report_relayed = 0;
+    radioConnect();
+  }
   else if(command.equals("START"))  {                             //Activates measurement and sets start time if not already started
     printout("Flight started via command at ",false);
     if(!(flight_begun)) {
@@ -373,7 +380,17 @@ void commandRegister(String command)  {
     if(smart_telemetry) printout("WARNING: Smart telemetry enabled. Data and report relay may be lost if SD card error",true);
     else printout("WARNING: Smart telemetry disabled. Data and report relay may be lost if connection error",true);
   }
-  else if((command.substring(0,5)).equals("FENCE"))  {             //Allows changing of gps and altitude fences, i.e. 'FENCEN-200' would set the north fence to -200, or off
+  else if ((command.substring(0,10)).equals("RESENDDATA"))  {     //Resends inputted value of last data, ie 'RESENDDATA30' would send the 30 most recent data lines
+    command.remove(0,10);
+    last_data_relayed -= command.toFloat();
+    radioConnect();
+  }
+  else if ((command.substring(0,12)).equals("RESENDREPORT"))  {   //Resends inputted value of last reports, ie 'RESENDREPORT30' would send the 30 most recent data lines
+    command.remove(0,12);
+    last_data_relayed -= command.toFloat();
+    radioConnect();
+  }
+  else if((command.substring(0,5)).equals("FENCE"))  {            //Allows changing of gps and altitude fences, i.e. 'FENCEN-200' would set the north fence to -200, or off
     switch(command.charAt(5)) {
       case('N'): n_fence = (command.substring(6)).toFloat();
       case('E'): e_fence = (command.substring(6)).toFloat();
@@ -386,7 +403,7 @@ void commandRegister(String command)  {
     printout("Fences set to " + String(n_fence) + "N, " + String(s_fence) + "S, " + String(e_fence) 
       + "E, " + String(w_fence) + "W, " + String(a_fence) + "alt(ft)",true);
   }
-  else if((command.substring(0,9)).equals("SETDEPLOY"))  {         //Toggles deployment booleans, G for GPS, A for altitude, T for timer, D for descent, P for forced PPOD deploy
+  else if((command.substring(0,9)).equals("SETDEPLOY"))  {        //Toggles deployment booleans, G for GPS, A for altitude, T for timer, D for descent, P for forced PPOD deploy
     switch(command.charAt(9)) {
       case('G'): dply_geo_fence = !dply_geo_fence;
       case('A'): dply_alt_fence = !dply_alt_fence;
