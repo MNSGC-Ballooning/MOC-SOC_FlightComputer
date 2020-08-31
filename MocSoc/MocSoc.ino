@@ -17,7 +17,7 @@
   #define tempBus 10          //data pin for temperature probe
   #define smartPin 6          //digital pin for SMART release system
   #define rbfPin A0           //pin through which remove-before-flight pin connects to 5V rail
-  #define radio_conn_pin A1   //pin that monitiers radio's connection status
+  #define radioConnPin A1     //pin that monitiers radio's connection status
   #define timeTillDeploy 75   //flight time in minutes after which to deploy panels
   #define northFence 44.63    //north gps fence for deployment, -200 to deactivate
   #define eastFence -92.52    //east gps fence for deployment, -200 to deactivate
@@ -60,7 +60,7 @@
   bool extra_data = false;                                        //tracks if there is extra data to print during a given cycle
   bool ppod_deploy_ping = false;                                  //tracks if PPOD has deployed, allows MOC-SOC deployment after recieved ping. Ignored by 'DEPLOY' command
   bool radio_tick = false;                                        //tracks if radio has made a connection yet during cycle
-  bool smart_telemetry = false;                                   //tracks if advanced telemetry is enabled, flips if SD card fails during bootup
+  bool smart_telemetry = true;                                    //tracks if advanced telemetry is enabled, flips if SD card fails during bootup
   unsigned long last_report_relayed = 0;                          //tracks last sent report file line
   unsigned long last_data_relayed = 0;                            //tracks last sent data file line
   float n_fence = northFence;                                     //gps fence value for solar arm deployment, if -200 fence deactivated
@@ -73,7 +73,7 @@
   bool dply_timer = true;                                         //toggles timer usage, if true flight timer can trigger deployment
   bool dply_descent = true;                                       //toggles automatic deploy after detecting burst, if true any descent triggers deployment
   bool force_ppod_deploy = true;                                  //toggles automatic backup PPOD deploy, if true PPOD will recive deploy command when MOC-SOC attempts deployment
-  unsigned int tracked_millis = 0;                                //holds last millis() value betweeen cycles for data clarity check
+  unsigned long tracked_millis = 0;                                //holds last millis() value betweeen cycles for data clarity check
   
 
 void setup() {
@@ -104,9 +104,9 @@ void sdSetup() {                 //starts SD Card logging and creates logging fi
       report_filename[7] = '0' + i%10;
       if (!SD.exists(report_filename)) {
         datalog = SD.open(report_filename, FILE_WRITE);
+        datalog.println(""); //loads blank line into report so radioConnect doesn't miss it
         datalog.close();
         SD_report_active = true;
-        printout(" ",true);  //loads blank line into report so radioConnect doesn't miss it
         printout("Logging report to: " + String(report_filename),true);
         break;
       }
@@ -116,9 +116,9 @@ void sdSetup() {                 //starts SD Card logging and creates logging fi
       data_filename[7] = '0' + i%10;
       if (!SD.exists(data_filename)) {
         datalog = SD.open(data_filename, FILE_WRITE);
+        datalog.println(""); //loads blank line into data so radioConnect doesn't miss it
         datalog.close();
         SD_data_active = true;
-        printout(" ",true,true); //loads blank line into data so radioConnect doesn't miss it
         printout("Logging data to: " + String(data_filename),true);
         break;
       }
@@ -139,6 +139,7 @@ void printout(String to_print, bool endline, bool data) {    //prints to both mo
   if (endline) Serial.println();
   if(!(data) && SD_report_active) {
     report_data += to_print;
+    if(endline) report_data += '\n';
     extra_data = true;
     }
   if(!smart_telemetry) {
@@ -155,10 +156,14 @@ void printdata() {
   tracked_millis = millis();
   data += String(tracked_millis) + "," + String(tracked_millis);
   printout(data,true,true);
-  if(extra_data) data += "," + report_data;
   if(SD_data_active) {
     datalog = SD.open(data_filename, FILE_WRITE);
     datalog.println(data);
+    datalog.close();
+  }
+  if(SD_report_active){
+    datalog = SD.open(report_filename, FILE_WRITE);
+    datalog.print(report_data);
     datalog.close();
     extra_data = false;
     report_data = "";
@@ -166,10 +171,10 @@ void printdata() {
 }
 
 void radioAndGpsSetup() {
-  xBee.init('A');
+  xBee.init('C');
   xBee.enterATmode();
-  xBee.atCommand("ATDL1");
-  xBee.atCommand("ATMY0");
+  xBee.atCommand("ATDL0");
+  xBee.atCommand("ATMY1");
   xBee.exitATmode();
   gps.init();
 }
@@ -442,42 +447,52 @@ void commandRegister(String command)  {
   }
 }
 
-void radioConnect()  {
-  if(analogRead(radio_conn_pin)>500) {
-    char next_char;
-    datalog = SD.open(report_filename, FILE_READ);
-    for(int i = 0; i<=last_report_relayed; i++) {
-      datalog.read(next_char,1);
-      while(next_char != '/n') {
-        datalog.read(next_char,1);
-      }
+void radioConnect() {
+  bool data_done = false;
+  bool report_done = false;
+  bool good_conn = false;
+  char next_ch;
+  if(analogRead(radioConnPin) > 500) {
+    good_conn = true;
+    datalog = SD.open(data_filename, FILE_READ);
+    next_ch=datalog.read();
+    for (int i=0; i<=last_data_relayed; i++) {
+      do next_ch=datalog.read(); while(next_ch != '\n');
     }
-    while((analogRead(radio_conn_pin)>500) && (datalog.peek() != 26)) {
-      while(next_char != '/n') {
-        Serial2.print(next_char);
-        datalog.read(next_char,1);
-      }
-      if(analogRead(radio_conn_pin)>500) last_report_relayed ++;
+    good_conn = (analogRead(radioConnPin) > 500);
+    if(!(datalog.peek()+1)) data_done = true;
+    while(good_conn && !data_done) {
+      Serial2.print("$M$");
+      do {
+        next_ch=datalog.read();
+        Serial2.print(next_ch);
+      } while(next_ch != '\n');
+      good_conn = (analogRead(radioConnPin) > 500);
+      if(good_conn) last_data_relayed++;
+      if(!(datalog.peek()+1)) data_done = true;
     }
     datalog.close();
     
-    datalog = SD.open(data_filename, FILE_READ);
-    for(int i = 0; i<=last_data_relayed; i++) {
-      datalog.read(next_char,1);
-      while(next_char != '/n') {
-        datalog.read(next_char,1);
-      }
+    datalog = SD.open(report_filename, FILE_READ);
+    next_ch=datalog.read();
+    for (int i=0; i<=last_report_relayed; i++) {
+      do next_ch=datalog.read(); while(next_ch != '\n');
     }
-    while((analogRead(radio_conn_pin)>500) && (datalog.peek() != 26)) {
-      while(next_char != '/n') {
-        Serial2.print(next_char);
-        datalog.read(next_char,1);
-      }
-      if(analogRead(radio_conn_pin)>500) last_data_relayed ++;
+    good_conn = (analogRead(radioConnPin) > 500);
+    if(!(datalog.peek()+1)) report_done = true;
+    while(good_conn && !report_done) {
+      Serial2.print("$M$");
+      do {
+        next_ch=datalog.read();
+        Serial2.print(next_ch);
+      } while(next_ch != '\n');
+      good_conn = (analogRead(radioConnPin) > 500);
+      if(good_conn) last_report_relayed++;
+      if(!(datalog.peek()+1)) report_done = true;
     }
     datalog.close();
-
-    printout("Data relayed to line " + String(last_data_relayed) + ", reports relayed to line " + String(last_report_relayed),true);
-    radio_tick = true;
+    printout(("Connection made at " + String(millis()) + ", data relayed to line " + 
+    String(last_data_relayed) + ", reports to line " + String(last_report_relayed)),true);
+    if(report_done && data_done) radio_tick = true;
   }
 }
